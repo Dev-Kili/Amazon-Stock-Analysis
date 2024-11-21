@@ -1,0 +1,589 @@
+---
+title: "Amazon Stock Analysis Report"
+author: "Kutay İLİ"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+
+```{r setup, include = FALSE}
+# Load necessary libraries
+library(knitr)
+library(rmarkdown)
+library(quantmod)
+library(tseries)
+library(timeSeries)
+library(forecast)
+library(xts)
+library(leaflet)
+library(dplyr)
+library(htmltools)
+library(rvest)
+library(urca)
+```
+## Introduction
+
+In this analysis, we will explore the stock prices of Amazon (AMZN) using various time series analysis techniques and visualizations.
+
+### Amazon Stock Analysis
+
+```{r Amazon Stock Analysis, echo=FALSE, warning=FALSE}
+getSymbols('AMZN', from= '2019-01-01', to = Sys.Date())
+AMZN_Close_Prices = AMZN[,4]
+
+plot(AMZN_Close_Prices)
+
+par(mfrow=c(1,2))
+Acf(AMZN_Close_Prices, main = 'ACF for Differenced Series')
+Pacf(AMZN_Close_Prices, main = 'PACF for Differenced Series')
+
+print(adf.test(AMZN_Close_Prices)) #p-value = 0.7027
+auto.arima(AMZN_Close_Prices, seasonal = FALSE) # ARIMA(0,1,0) AIC/BIC = 6183/6188
+
+fitA = auto.arima(AMZN_Close_Prices, seasonal = FALSE)
+tsdisplay(residuals(fitA), lag.max = 40, main = '(0,1,0) Model Residuals')
+auto.arima(AMZN_Close_Prices, seasonal = FALSE) # AIC/BIC = 6183/6188
+
+fitB = arima(AMZN_Close_Prices, order = c(2,1,1))
+tsdisplay(residuals(fitB), lag.max = 40, main = '(2,1,1) Model Residuals')
+
+fitC = arima(AMZN_Close_Prices, order = c(2,2,2))
+tsdisplay(residuals(fitC), lag.max = 40, main = '(2,2,2 Model Residuals')
+
+fitD = arima(AMZN_Close_Prices, order = c(1,1,1))
+tsdisplay(residuals(fitD), lag.max = 40, main = '(1,1,1) Model Residuals')
+
+cat("PLOTS")
+par(mfrow=c(2,2))
+
+term <- 90
+fcast1 <- forecast(fitA, h = term)
+plot(fcast1)
+
+fcast2 <- forecast(fitB, h = term)
+plot(fcast2)
+fcast3 <- forecast(fitC, h = term)
+plot(fcast3)
+fcast4 <- forecast(fitD, h = term)
+plot(fcast4)
+
+cat("Mape accuracy")
+cat(" ARIMA 1")
+accuracy(fcast1) # mape = 1.581473, accuracy = 98.41853%
+cat(" ARIMA 2")
+accuracy(fcast2) # mape = 1.582399, accuracy = 98.4176%
+cat(" ARIMA 3")
+accuracy(fcast3) # mape = 1.578755, accuracy = 98.42125% highest
+cat(" ARIMA 4")
+accuracy(fcast4) # mape = 1.584466, accuracy = 98.415534%
+```
+
+### Amazon Volume Analysis
+
+```{r Amazon Volume Analysis, echo= FALSE, message=FALSE, warning=FALSE}
+
+getSymbols('AMZN', from= '2019-01-01', to = Sys.Date())
+AMZN_Volume = AMZN[,5]
+
+plot(AMZN_Volume)
+
+par(mfrow=c(1,2))
+Acf(AMZN_Volume, main = 'ACF for Differenced Series')
+Pacf(AMZN_Volume, main = 'PACF for Differenced Series')
+
+print(adf.test(AMZN_Volume)) #p-value = 0.01(p-value smaller than printed p-value)
+auto.arima(AMZN_Volume, seasonal = FALSE) # ARIMA(1,1,1) AIC/BIC = 46712.8/46728.23
+
+fitE = auto.arima(AMZN_Volume, seasonal = FALSE)
+tsdisplay(residuals(fitE), lag.max = 40, main = '(1,1,1) Model Residuals')
+auto.arima(AMZN_Volume, seasonal = FALSE) # AIC/BIC = 46712.8/46728.23
+
+fitF = arima(AMZN_Volume, order = c(2,1,1))
+tsdisplay(residuals(fitF), lag.max = 40, main = '(2,1,1) Model Residuals')
+
+fitG = arima(AMZN_Volume, order = c(2,2,2))
+tsdisplay(residuals(fitG), lag.max = 40, main = '(2,2,2 Model Residuals')
+
+fitH = arima(AMZN_Volume, order = c(3,1,1))
+tsdisplay(residuals(fitH), lag.max = 40, main = '(3,1,1) Model Residuals')
+
+cat("PLOTS")
+par(mfrow=c(2,2))
+
+#auto arima
+term <- 90
+fcast5 <- forecast(fitE, h = term)
+plot(fcast5)
+
+#custom arimas
+fcast6 <- forecast(fitF, h = term)
+plot(fcast6)
+fcast7 <- forecast(fitG, h = term)
+plot(fcast7)
+fcast8 <- forecast(fitH, h = term)
+plot(fcast8)
+
+cat("Mape accuracy")
+cat(" ARIMA 1")
+accuracy(fcast5) # mape = 22.14879 , accuracy = 77.85121%
+cat(" ARIMA 2")
+accuracy(fcast6) # mape = 22.16384  , accuracy = 77.83616%
+cat(" ARIMA 3")
+accuracy(fcast7) # mape = 21.41623  , accuracy = 78.58377% highest
+cat(" ARIMA 4")
+accuracy(fcast8) # mape = 22.18992   , accuracy = 77.81008%
+```
+
+
+### Amazon Total Assets Analysis
+
+
+```{r Amazon Total Assets Analysis, echo=FALSE, warning=FALSE}
+
+#Grabbing table and transforming into the necessary conditions
+url <- "https://stockanalysis.com/stocks/amzn/financials/balance-sheet/?p=quarterly"
+
+page <- read_html(url)
+
+table_data <- page %>% html_table(fill = TRUE)
+
+target_table <- NULL
+for (table in table_data) {
+  if ("Total Assets" %in% colnames(table)) {
+    target_table <- table
+    break
+  }
+}
+```
+```{r, include = FALSE}
+if (!is.null(target_table)) {
+  total_assets_data <- target_table[, c("Item", "Total Assets")]
+  print(total_assets_data)
+} else {
+  print("Table not found.")
+}
+```
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+total_assets <- table[12,1:21]
+total_asset <- data.frame(table = as.numeric(gsub(",", "", t(total_assets[ , -1]))))
+
+total_asset_list <- as.list(total_asset$table)
+
+total_asset_list <- rev(total_asset_list)
+
+total_asset_df <- data.frame(Values = unlist(total_asset_list))
+
+total_asset_ts <- ts(total_asset_df$Values, 
+                     start = c(2018, 4),
+                     frequency = 4) 
+print(total_asset_ts)
+
+
+
+
+#Forecasting
+plot(total_asset_ts)
+
+par(mfrow=c(1,2))
+Acf(total_asset_ts, main = 'ACF for Differenced Series')
+Pacf(total_asset_ts, main = 'PACF for Differenced Series')
+
+print(adf.test(total_asset_ts)) #p-value = 0.7505
+auto.arima(total_asset_ts, seasonal = FALSE) # ARIMA(0,1,0)  AIC/BIC = 422.68/424.57
+
+fitX = auto.arima(total_asset_ts, seasonal = FALSE)
+tsdisplay(residuals(fitX), lag.max = 40, main = '(1,1,1) Model Residuals')
+auto.arima(total_asset_ts, seasonal = FALSE) # AIC/BIC = 46712.8/46728.23
+
+fitY = arima(total_asset_ts, order = c(2,1,1))
+tsdisplay(residuals(fitF), lag.max = 40, main = '(2,1,1) Model Residuals')
+
+fitZ = arima(total_asset_ts, order = c(2,2,1))
+tsdisplay(residuals(fitG), lag.max = 40, main = '(2,2,2 Model Residuals')
+
+fitI = arima(total_asset_ts, order = c(1,1,1))
+tsdisplay(residuals(fitH), lag.max = 40, main = '(1,1,1) Model Residuals')
+
+cat("PLOTS")
+par(mfrow=c(2,2))
+
+#auto arima
+term <- 3
+fcast9 <- forecast(fitX, h = term)
+plot(fcast9)
+
+#custom arimas
+fcast10 <- forecast(fitY, h = term)
+plot(fcast10)
+fcast11 <- forecast(fitZ, h = term)
+plot(fcast11)
+fcast12 <- forecast(fitI, h = term)
+plot(fcast12)
+
+cat("Mape accuracy")
+cat(" ARIMA 1")
+accuracy(fcast9) # mape = 3.735785, accuracy = 96.264215%
+cat(" ARIMA 2")
+accuracy(fcast10) # mape = 3.916153, accuracy = 96.083847%
+cat(" ARIMA 3")
+accuracy(fcast11) # mape = 3.358281, accuracy = 96.641719% highest
+cat(" ARIMA 4")
+accuracy(fcast12) # mape = 3.944273, accuracy = 96.055727%
+```
+
+### Comparison Analysis
+
+#### Amazon and Alibaba
+
+```{r Amazon and Alibaba, echo=FALSE, warning=FALSE}
+
+getSymbols('BABA', from= '2019-01-01', to = Sys.Date())
+BABA_Close_Prices = BABA[,4]
+
+plot(BABA_Close_Prices)
+
+par(mfrow=c(1,2))
+Acf(BABA_Close_Prices, main = 'ACF for Differenced Series')
+Pacf(BABA_Close_Prices, main = 'PACF for Differenced Series')
+
+print(adf.test(BABA_Close_Prices)) #p-value = 0.5394
+auto.arima(BABA_Close_Prices, seasonal = FALSE) # ARIMA(0,1,0) AIC/BIC = 7386.77/7433.07
+
+fitBABA = auto.arima(BABA_Close_Prices, seasonal = FALSE)
+tsdisplay(residuals(fitBABA), lag.max = 40, main = '(0,1,0) Model Residuals')
+auto.arima(BABA_Close_Prices, seasonal = FALSE) # AIC/BIC = 7386.77/7433.07
+
+
+cat("Auto arima")
+term <- 90
+fcastBABA <- forecast(fitBABA, h = term)
+plot(fcastBABA)
+
+cat("Mape accuracy")
+accuracy(fcastBABA) 
+
+# Explore
+summary(AMZN_Close_Prices)
+summary(BABA_Close_Prices)
+
+# Both Stock Prices
+plot(Cl(AMZN_Close_Prices), type = "l", col = "blue", main = "Amazon Stock Prices")
+lines(Cl(BABA_Close_Prices), col = "red")
+legend("topright", legend = c("Amazon", "Alibaba"), col = c("blue", "red"))
+
+# Relative Performance
+relative_performance <- Cl(AMZN_Close_Prices) / Cl(BABA_Close_Prices)
+plot(relative_performance, type = "l", col = "black", main = "Relative Performance (Amazon vs. Alibaba)")
+
+merged_data <- merge(Cl(AMZN_Close_Prices), Cl(BABA_Close_Prices), join = "inner")
+
+cat("Calculate Correlation")
+correlation <- cor(merged_data[, 1], merged_data[, 2])
+print(correlation)
+
+cor_tests1 <- suppressWarnings(cor.test(merged_data[, 1], merged_data[, 2]))
+print(cor_tests1)
+
+
+aligned_data2 <- merge(Cl(AMZN_Close_Prices), Cl(BABA_Close_Prices), join = "inner")
+
+cat("Cointegration test")
+cointegration_test <- ca.jo(aligned_data2, type = "eigen", K = 2, ecdet = "const", spec = "longrun")
+print(cointegration_test)
+
+summary(cointegration_test)
+
+relative_performance_alibaba <- Cl(AMZN_Close_Prices) / Cl(BABA_Close_Prices)
+
+dates_alibaba <- index(AMZN_Close_Prices)
+relative_performance_ts_alibaba <- ts(relative_performance_alibaba, start = dates_alibaba[1], frequency = 1)
+
+# Simple moving average
+ma_window_alibaba <- 20
+ma_relative_performance_alibaba <- stats::filter(relative_performance_ts_alibaba, rep(1/ma_window_alibaba, ma_window_alibaba), sides = 2)
+
+# Plotting advanced relative performance for Alibaba
+plot(relative_performance_ts_alibaba, type = "l", col = "black", lwd = 2,
+     main = "Advanced Relative Performance (Amazon vs. Alibaba)",
+     ylab = "Relative Performance", xlab = "Time")
+
+# Moving average line
+lines(index(relative_performance_ts_alibaba), ma_relative_performance_alibaba, col = "blue", lwd = 2)
+
+# Significant periods
+threshold_alibaba <- mean(relative_performance_alibaba)
+abline(h = threshold_alibaba, col = "red", lty = 2)
+
+
+legend("bottomright", legend = c("Relative Performance", "Moving Average", paste("Threshold =", threshold_alibaba)),
+       col = c("black", "blue", "red"), lty = c(1, 1, 2), lwd = c(2, 2, 1))
+```
+
+#### Amazon and eBay
+```{r Amazon and eBay, echo=FALSE, warning=FALSE}
+
+getSymbols('EBAY', from= '2019-01-01', to = Sys.Date())
+EBAY_Close_Prices = EBAY[,4]
+
+plot(EBAY_Close_Prices)
+
+# ACF and PACF for differenced series
+par(mfrow=c(1,2))
+Acf(EBAY_Close_Prices, main = 'ACF for Differenced Series')
+Pacf(EBAY_Close_Prices, main = 'PACF for Differenced Series')
+
+# Augmented Dickey-Fuller test
+print(adf.test(EBAY_Close_Prices)) # p-value = 0.5394
+
+cat("Auto ARIMA")
+auto.arima(EBAY_Close_Prices, seasonal = FALSE) # ARIMA(0,1,0) AIC/BIC = 7386.77/7433.07
+
+# Fit ARIMA model
+fitEBAY = auto.arima(EBAY_Close_Prices, seasonal = FALSE)
+
+# Time series display for residuals
+tsdisplay(residuals(fitEBAY), lag.max = 40, main = '(0,1,0) Model Residuals')
+
+
+# Auto ARIMA forecast
+term <- 90
+fcastEBAY <- forecast(fitEBAY, h = term)
+plot(fcastEBAY)
+
+# MAPE accuracy 
+accuracy(fcastEBAY) # MAPE = 2.062036, accuracy = 97.937964%
+
+cat("Explore")
+summary(AMZN_Close_Prices)
+summary(EBAY_Close_Prices)
+
+# Plotting stock prices for Amazon and eBay
+plot(Cl(AMZN_Close_Prices), type = "l", col = "blue", main = "Amazon vs. eBay Stock Prices")
+lines(Cl(EBAY_Close_Prices), col = "green")
+legend("topright", legend = c("Amazon", "eBay"), col = c("blue", "green"))
+
+# Relative performance
+relative_performance_ebay <- Cl(AMZN_Close_Prices) / Cl(EBAY_Close_Prices)
+plot(relative_performance_ebay, type = "l", col = "black", main = "Relative Performance (Amazon vs. eBay)")
+
+merged_data_ebay <- merge(Cl(AMZN_Close_Prices), Cl(EBAY_Close_Prices), join = "inner")
+
+cat("Correlation")
+correlation_ebay <- cor(merged_data_ebay[, 1], merged_data_ebay[, 2])
+print(correlation_ebay)
+
+cat(" Cointegration test ")
+aligned_data_ebay <- merge(Cl(AMZN_Close_Prices), Cl(EBAY_Close_Prices), join = "inner")
+cointegration_test_ebay <- ca.jo(aligned_data_ebay, type = "eigen", K = 2, ecdet = "const", spec = "longrun")
+print(cointegration_test_ebay)
+summary(cointegration_test_ebay)
+
+
+# Relative performance for eBay
+relative_performance_ebay <- Cl(AMZN_Close_Prices) / Cl(EBAY_Close_Prices)
+
+dates2 <- index(AMZN_Close_Prices)
+relative_performance_ts <- ts(relative_performance_ebay, start = dates2[1], frequency = 1)
+
+# Moving average
+ma_window <- 20
+ma_relative_performance <- stats::filter(relative_performance_ts, rep(1/ma_window, ma_window), sides = 2)
+
+# Advanced relative performance
+plot(relative_performance_ts, type = "l", col = "black", lwd = 2,
+     main = "Advanced Relative Performance (Amazon vs. eBay)",
+     ylab = "Relative Performance", xlab = "Time")
+
+lines(index(relative_performance_ts), ma_relative_performance, col = "blue", lwd = 2)
+
+# Significant periods
+
+threshold_EBAY <- mean(relative_performance_ebay)
+abline(h = threshold_EBAY, col = "red", lty = 2)
+
+# Add legend
+legend("bottomright", legend = c("Relative Performance", "Moving Average", paste("Threshold =", threshold_EBAY)),
+       col = c("black", "blue", "red"), lty = c(1, 1, 1), lwd = c(1, 1, 1))
+```
+
+#### Amazon and Walmart
+```{r Amazon and Walmart, echo=FALSE, warning=FALSE}
+
+getSymbols('WMT', from= '2019-01-01', to = Sys.Date())
+WMT_Close_Prices = WMT[,4]
+
+# Plot Walmart stock prices
+plot(WMT_Close_Prices)
+
+# ACF and PACF for differenced series
+par(mfrow=c(1,2))
+Acf(WMT_Close_Prices, main = 'ACF for Differenced Series')
+Pacf(WMT_Close_Prices, main = 'PACF for Differenced Series')
+
+# Augmented Dickey-Fuller test
+print(adf.test(WMT_Close_Prices)) # p-value = 0.5394
+
+cat("Auto ARIMA")
+auto.arima(WMT_Close_Prices, seasonal = FALSE) # ARIMA(0,1,0) AIC/BIC = 7386.77/7433.07
+
+
+fitWMT = auto.arima(WMT_Close_Prices, seasonal = FALSE)
+
+
+tsdisplay(residuals(fitWMT), lag.max = 40, main = '(0,1,0) Model Residuals')
+
+
+term <- 90
+fcastWMT <- forecast(fitWMT, h = term)
+plot(fcastWMT)
+
+
+accuracy(fcastWMT) # MAPE = 2.062036, accuracy = 97.937964%
+
+cat("Explore")
+summary(AMZN_Close_Prices)
+summary(WMT_Close_Prices)
+
+
+plot(Cl(AMZN_Close_Prices), type = "l", col = "blue", main = "Amazon vs. Walmart Stock Prices")
+lines(Cl(WMT_Close_Prices), col = "purple")
+legend("topright", legend = c("Amazon", "Walmart"), col = c("blue", "purple"))
+
+
+relative_performance_walmart <- Cl(AMZN_Close_Prices) / Cl(WMT_Close_Prices)
+plot(relative_performance_walmart, type = "l", col = "black", main = "Relative Performance (Amazon vs. Walmart)")
+
+
+merged_data_walmart <- merge(Cl(AMZN_Close_Prices), Cl(WMT_Close_Prices), join = "inner")
+
+cat(" Correlation")
+correlation_walmart <- cor(merged_data_walmart[, 1], merged_data_walmart[, 2])
+print(correlation_walmart)
+
+cat("Cointegration test")
+aligned_data_walmart <- merge(Cl(AMZN_Close_Prices), Cl(WMT_Close_Prices), join = "inner")
+cointegration_test_walmart <- ca.jo(aligned_data_walmart, type = "eigen", K = 2, ecdet = "const", spec = "longrun")
+print(cointegration_test_walmart)
+
+summary(cointegration_test_walmart)
+
+
+relative_performance_walmart <- Cl(AMZN_Close_Prices) / Cl(WMT_Close_Prices)
+
+dates_walmart <- index(AMZN_Close_Prices)
+relative_performance_ts_walmart <- ts(relative_performance_walmart, start = dates_walmart[1], frequency = 1)
+
+ma_window_walmart <- 20
+ma_relative_performance_walmart <- stats::filter(relative_performance_ts_walmart, rep(1/ma_window_walmart, ma_window_walmart), sides = 2)
+
+plot(relative_performance_ts_walmart, type = "l", col = "black", lwd = 2,
+     main = "Advanced Relative Performance (Amazon vs. Walmart)",
+     ylab = "Relative Performance", xlab = "Time")
+
+
+lines(index(relative_performance_ts_walmart), ma_relative_performance_walmart, col = "blue", lwd = 2)
+
+threshold_walmart <- mean(relative_performance_walmart)
+abline(h = threshold_walmart, col = "red", lty = 2)
+
+
+legend("bottomright", legend = c("Relative Performance", "Moving Average", paste("Threshold =", threshold_walmart)),
+       col = c("black", "blue", "red"), lty = c(1, 1, 2), lwd = c(2, 2, 1))
+
+```
+
+#### News about Amazon
+
+  In this section, the news about Amazon from the last 30 days can be found. The content includes dates, news headlines, and links to access the news. In the final section, the current stock price of Amazon is displayed.
+  
+
+#### Interactive Map of Amazon's Global Expansion
+
+  In this section, countries are categorized based on the dates when Amazon commenced operations, and this information is visualized on an interactive map.
+
+```{r, warning=FALSE ,echo=FALSE}
+library(leaflet)
+library(dplyr)
+library(htmltools)
+library(rvest)
+
+
+
+wiki_url <- "https://en.wikipedia.org/wiki/Amazon_(company)"
+
+
+wiki_page <- read_html(wiki_url)
+
+
+amazon_table <- wiki_page %>% html_nodes(".wikitable") %>% html_table(fill = TRUE)
+
+
+amazon_data <- amazon_table[[1]]
+
+
+country_column <- amazon_data$Country
+since_column <- amazon_data$Since
+
+
+amazon_df <- data.frame(Country = country_column, Since = since_column)
+
+print(amazon_df)
+
+
+
+amazon_df$Lat <- c(26.8206, -14.2350, 56.1304, 23.6345, 37.0902, 35.8617, 20.5937, 
+                   36.2048, 23.8859, 1.3521, 38.9637, 23.4241, 50.8503, 46.6031, 
+                   51.1657, 41.8719, 52.1326, 51.9194, 40.4637, 60.1282, 55.3781, 
+                   -25.2744)
+
+amazon_df$Long <- c(30.8025, -51.9253, -106.3468, -102.5528, -95.7129, 104.1954, 
+                    78.9629, 138.2529, 45.0792, 103.8198, 35.2433, 53.8478, 4.3517, 
+                    1.8883, 10.4515, 12.5674, 5.2913, 19.1451, -3.7492, 18.6435, 
+                    -3.4360, 133.7751)
+
+
+
+
+
+
+country_column <- amazon_data$Country
+since_column <- amazon_data$Since
+
+amazon_df$Year <- as.numeric(gsub("\\D", "", amazon_df$Since))
+
+amazon_df$Category <- cut(amazon_df$Year, breaks = c(0, 2000, 2010, 2015, 2020, Inf), labels = c("<2000", "2000-2010", "2010-2015", "2015-2020", "2020<"))
+
+
+
+category_colors <- colorFactor(c("red", "orange", "yellow", "green", "blue"), levels = c("<2000", "2000-2010", "2010-2015", "2015-2020", "2020<"))
+
+
+
+amazon_map <- leaflet(amazon_df) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lat = ~ Lat,  # Replace with your latitude column
+    lng = ~ Long,  # Replace with your longitude column
+    radius = 8,
+    color = ~category_colors(Category),
+    fillOpacity = 0.7,
+    popup = ~paste(Country, "<br>Since:", Since, sep = " ")
+  ) %>%
+  addLegend(
+    title = "Amazon Countries",
+    colors = c("red", "orange", "yellow", "green", "blue"),
+    labels = c("<2000", "2000-2010", "2010-2015", "2015-2020", "2020<"),
+    position = "bottomright"
+  )
+
+
+amazon_map
+
+
+```
+
+
+
+
+
